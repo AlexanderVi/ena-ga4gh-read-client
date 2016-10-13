@@ -1,0 +1,48 @@
+test_queries:
+  HiSeqX NA12878 (BAM):
+    - {sequence: non_existent, start: 1, end: 10000}
+    - {sequence: 1, start: 1, end: 1000}
+    - {sequence: 1, start: 1, end: 10000}
+    - {sequence: 1, start: 1, end: 100000}
+    - {sequence: 2, start: 1, end: 100000}
+    - {sequence: X, start: 155260500, end: 156000000}
+
+providers:
+  ebi:
+    base: http://ga4gh.ebi.ac.uk/ticket/
+#    base: http://localhost:8080/ticket/
+    accessions:
+      HiSeqX NA12878 (BAM): NA12878.bam
+  dnanexus:
+    base: http://htsnexus.rnd.dnanex.us/v1/reads/
+    accessions:
+      HiSeqX NA12878 (BAM): BroadHiSeqX_b37/NA12878
+      HiSeqX NA12878 (CRAM): BroadHiSeqX_hg38/NA12878
+      HiSeqX NA12891 (BAM): BroadHiSeqX_b37/NA12891
+      HiSeqX NA12891 (CRAM): BroadHiSeqX_hg38/NA12891
+      HiSeqX NA12892 (BAM): BroadHiSeqX_b37/NA12892
+      HiSeqX NA12892 (CRAM):  BroadHiSeqX_hg38/NA12892
+      RNAseq: ENCODE/ENCFF284YOU
+      ChIP-seq: ENCODE/ENCFF000VWO
+  google:
+    base: http://104.196.18.135/reads/
+    accessions:
+      HiSeqX NA12878 (BAM): CO_Ph7XUCRDW0-riiPr48fgB
+      HiSeqX NA12878 (CRAM): CO_Ph7XUCRCX3-no2-WqtqcB
+      HiSeqX NA12891 (BAM): CO_Ph7XUCRDfpdqpjO3Tim0
+      HiSeqX NA12891 (CRAM): CO_Ph7XUCRDngbisk52h2KEB
+      HiSeqX NA12892 (BAM): CO_Ph7XUCRCMtrWtwPmA4dgB
+      HiSeqX NA12892 (CRAM): CO_Ph7XUCRDnpcT9pKrW-tUB
+      RNAseq: CO_Ph7XUCRCi9Lasl7yY5Z0B
+      ChIP-seq: CO_Ph7XUCRCSn-mRrofkhXY
+  sanger:
+    base: http://162.222.183.127:8090/ga4gh/v.0.1/get/sample/
+    accessions:
+      HiSeqX NA12878 (BAM): NA12878
+      HiSeqX NA12878 (CRAM): NA12878_GRCH38
+      HiSeqX NA12891 (BAM): NA12891
+      HiSeqX NA12891 (CRAM): NA12891_GRCH38
+      HiSeqX NA12892 (BAM): NA12892
+      HiSeqX NA12892 (CRAM): NA12892_GRCH38
+      RNAseq: ENCFF284YOU_GRCH38
+      ChIP-seq: ENCFF000VWO
