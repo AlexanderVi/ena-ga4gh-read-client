@@ -115,22 +115,16 @@ public class TicketClient {
             System.err.println(sURL);
         }
     }
-
-    private static String formatURL(String base, String accession, Query query, Format format) 
-    {        
-        String url = String.format("%s%s?format=%s&referenceName=%s", base, accession, format==Format.BAM?"BAM":"CRAM", query.sequence);
-		if( query.start > 0  )
-		{
-	        url = String.format( url+"&start=%d", query.start );
-	        if( query.end > 0 )
-	       		url = String.format( url+"&end=%d", query.end );
-	    }
-
-	    //System.out.println("URL:"+url);
-	    
-	    return url;
+      
+    private static String formatURL(String base, String accession, Query query, Format format)
+    {
+    	String url = String.format("%s%s?format=%s&referenceName=%s", base, accession, format==Format.BAM?"BAM":"CRAM", query.sequence);
+        if( query.start <= 0 ) query.start = 1;
+    	url = String.format( url+"&start=%d", query.start );    	
+        if( query.end > 0 ) url = String.format( url+"&end=%d", query.end );        	
+   	return url;
     }
-
+   	
     private static Report testTicketForQuery(TicketResponse r, Query query) throws IOException, URISyntaxException, ParseException {
         long millisStart = System.currentTimeMillis();
         InputStream inputStream = join(r);
@@ -180,8 +174,6 @@ public class TicketClient {
     }
 
     private static TicketResponse getTicket(URL url, boolean printTicket) throws IOException, EndpointException {
-
-	    //System.out.println(url);
 	    
         HttpURLConnection connection = (HttpURLConnection) url.openConnection();
         connection.setRequestMethod("GET");
