@@ -29,8 +29,13 @@ public class TicketClient {
         System.err.println(message);
         System.exit(1);
     }
+    private static enum Format {
+        BAM,        
+        CRAM
+      }
 
     public static void main(String[] args) throws IOException, URISyntaxException, EndpointException, ParseException {
+
         Params params = new Params();
         JCommander jc = new JCommander(params);
         jc.parse(args);
@@ -56,18 +61,12 @@ public class TicketClient {
             if (params.referenceName == null) {
                 error("Reference name required");
             }
-            if (params.start < 1) {
-                error("Alignment start is required");
-            }
-            if (params.stop < 1) {
-                error("Alignment end is required");
-            }
 
             Query query = new Query();
             query.sequence = params.referenceName;
             query.start = params.start;
             query.end = params.stop;
-            String sURL = formatURL(endpointUrl, params.datasetId, query);
+            String sURL = formatURL(endpointUrl, params.datasetId, query, params.format);
             URL url = new URL(sURL);
             TicketResponse r = getTicket(url, params.printTicket);
             InputStream inputStream = join(r);
@@ -103,7 +102,7 @@ public class TicketClient {
         String sURL = null;
         try {
             System.out.printf("\t\t%-10s", name);
-            sURL = formatURL(provider.base, accession, query);
+            sURL = formatURL(provider.base, accession, query, id.contains("BAM")?Format.BAM:Format.CRAM);
             URL url = new URL(sURL);
             TicketResponse r = getTicket(url, false);
             Report report = testTicketForQuery(r, query);
@@ -116,11 +115,16 @@ public class TicketClient {
             System.err.println(sURL);
         }
     }
-
-    private static String formatURL(String base, String accession, Query query) {
-        return String.format("%s%s?format=BAM&referenceName=%s&start=%d&end=%d", base, accession, query.sequence, query.start, query.end);
+      
+    private static String formatURL(String base, String accession, Query query, Format format)
+    {
+    	String url = String.format("%s%s?format=%s&referenceName=%s", base, accession, format==Format.BAM?"BAM":"CRAM", query.sequence);
+        if( query.start <= 0 ) query.start = 1;
+    	url = String.format( url+"&start=%d", query.start );    	
+        if( query.end > 0 ) url = String.format( url+"&end=%d", query.end );        	
+   	return url;
     }
-
+   	
     private static Report testTicketForQuery(TicketResponse r, Query query) throws IOException, URISyntaxException, ParseException {
         long millisStart = System.currentTimeMillis();
         InputStream inputStream = join(r);
@@ -170,6 +174,7 @@ public class TicketClient {
     }
 
     private static TicketResponse getTicket(URL url, boolean printTicket) throws IOException, EndpointException {
+	    
         HttpURLConnection connection = (HttpURLConnection) url.openConnection();
         connection.setRequestMethod("GET");
         connection.connect();
@@ -237,6 +242,9 @@ public class TicketClient {
 
         @Parameter(names = {"--alignment-stop"}, description = "Alignment end for genomic query")
         int stop=0;
+
+        @Parameter(names = {"--format"}, description = "Format : BAM or CRAM")
+        Format format=Format.BAM;
 
         @Parameter(names = {"--output-file"}, description = "Output file to write received data, omit for STDOUT")
         File outputFile;
