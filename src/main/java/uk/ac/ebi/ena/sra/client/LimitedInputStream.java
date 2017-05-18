@@ -21,8 +21,11 @@ class LimitedInputStream extends InputStream {
         if (read >= size) {
             return -1;
         }
+        int result = delegate.read();
+        if (result == -1)
+            throw new IOException("The stream is incomplete, expected " + size + " but read " + read + " bytes.");
         read++;
-        return delegate.read();
+        return result;
     }
 
     @Override

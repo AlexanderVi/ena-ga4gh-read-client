@@ -213,11 +213,34 @@ public class TicketClient {
                     inputStreamList.add(new LimitedInputStream(new BufferedInputStream(stream), size));
 
                 } else {
-                    inputStreamList.add(new BufferedInputStream(new URL(uo.url).openStream()));
+                    long size = getContentLength(new URL(uo.url));
+                    if (size > -1L)
+                        inputStreamList.add(new LimitedInputStream(new BufferedInputStream(new URL(uo.url).openStream()), size));
+                    else
+                        inputStreamList.add(new BufferedInputStream(new URL(uo.url).openStream()));
                 }
             }
         }
         return new MultiInputStream(inputStreamList);
+    }
+
+    /**
+     * Try to request content length from the URL via HTTP HEAD method.
+     * @param url the URL to request about
+     * @return number of bytes to expect from the URL or -1 if unknown.
+     */
+    private static long getContentLength(URL url) {
+        HttpURLConnection connection = null;
+        try {
+            connection = (HttpURLConnection) url.openConnection();
+            connection.setRequestMethod("HEAD");
+            connection.getInputStream();
+            return connection.getContentLengthLong();
+        } catch (IOException e) {
+            return -1L;
+        } finally {
+            connection.disconnect();
+        }
     }
 
     @Parameters
