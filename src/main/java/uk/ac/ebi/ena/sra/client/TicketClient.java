@@ -7,8 +7,10 @@ import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import htsjdk.samtools.*;
 import htsjdk.samtools.cram.io.CountingInputStream;
+import htsjdk.samtools.cram.ref.CRAMReferenceSource;
+import htsjdk.samtools.cram.ref.ReferenceSource;
 import htsjdk.samtools.seekablestream.SeekableHTTPStream;
-import htsjdk.samtools.util.IOUtil;
+import htsjdk.samtools.util.Log;
 import htsjdk.samtools.util.Tuple;
 import org.yaml.snakeyaml.Yaml;
 import org.yaml.snakeyaml.constructor.Constructor;
@@ -30,7 +32,7 @@ public class TicketClient {
         System.exit(1);
     }
     private static enum Format {
-        BAM,        
+        BAM,
         CRAM
       }
 
@@ -57,6 +59,7 @@ public class TicketClient {
             }
         }
 
+        Log.setGlobalLogLevel(Log.LogLevel.ERROR);
         if (endpointUrl != null) {
             if (params.referenceName == null) {
                 error("Reference name required");
@@ -69,68 +72,84 @@ public class TicketClient {
             String sURL = formatURL(endpointUrl, params.datasetId, query, params.format);
             URL url = new URL(sURL);
             TicketResponse r = getTicket(url, params.printTicket);
-            InputStream inputStream = join(r);
-            OutputStream outputStream;
-            if (params.outputFile == null) outputStream = new BufferedOutputStream(System.out);
-            else outputStream = new FileOutputStream(params.outputFile);
-            IOUtil.copyStream(inputStream, outputStream);
-            outputStream.close();
+
+            IOException exception = null;
+            do {
+                InputStream inputStream = join(r, params.bufferSize);
+                OutputStream outputStream;
+                if (params.outputFile == null) outputStream = new BufferedOutputStream(System.out);
+                else outputStream = new FileOutputStream(params.outputFile);
+                try {
+                    final byte[] buffer = new byte[params.bufferSize];
+                    int bytesRead;
+                    while ((bytesRead = inputStream.read(buffer)) > 0) {
+                        outputStream.write(buffer, 0, bytesRead);
+                    }
+                } catch (IOException e) {
+                    exception = e;
+                    params.retries--;
+                }
+                outputStream.close();
+            } while (params.retries > 0 && exception != null);
+
             return;
         }
 
         InputStream input = new FileInputStream(params.configurationFile);
         Yaml yaml = new Yaml(new Constructor(Configuration.class));
         Configuration configuration = (Configuration) yaml.load(input);
-        diagnostics(configuration);
+        diagnostics(configuration, params.bufferSize, new ReferenceSource(params.refFile));
     }
 
-    private static void diagnostics(Configuration configuration) {
+    private static void diagnostics(Configuration configuration, final int bufferSize, final CRAMReferenceSource referenceSource) {
         for (String id : configuration.test_queries.keySet()) {
             System.out.println(id);
             for (Query query : configuration.test_queries.get(id)) {
                 System.out.println("\t" + query.toQueryString());
                 for (String name : configuration.providers.keySet()) {
                     Provider provider = configuration.providers.get(name);
-                    diagnostics(id, query, name, provider);
+                    diagnostics(id, query, name, provider, bufferSize, referenceSource);
                 }
             }
         }
     }
 
-    private static void diagnostics(String id, Query query, String name, Provider provider) {
+    private static void diagnostics(String id, Query query, String name, Provider provider, final int bufferSize, final CRAMReferenceSource referenceSource) {
         String accession = provider.accessions.get(id);
         String sURL = null;
         try {
             System.out.printf("\t\t%-10s", name);
-            sURL = formatURL(provider.base, accession, query, id.contains("BAM")?Format.BAM:Format.CRAM);
+            sURL = formatURL(provider.base, accession, query, id.contains("BAM") ? Format.BAM : Format.CRAM);
             URL url = new URL(sURL);
             TicketResponse r = getTicket(url, false);
-            Report report = testTicketForQuery(r, query);
+            Report report = testTicketForQuery(r, query, bufferSize, referenceSource);
             System.out.printf("\t%20s\n", report.print());
         } catch (EndpointException e) {
-            System.out.println("\tHTTP CODE " + e.code);
+            System.err.println("\tHTTP CODE " + e.code);
+            System.err.println(sURL);
         } catch (Exception e) {
             System.out.println("\tUNKNOWN ERROR: " + e.getMessage());
             e.printStackTrace();
             System.err.println(sURL);
         }
     }
-      
-    private static String formatURL(String base, String accession, Query query, Format format)
-    {
-    	String url = String.format("%s%s?format=%s&referenceName=%s", base, accession, format==Format.BAM?"BAM":"CRAM", query.sequence);
-        if( query.start <= 0 ) query.start = 1;
-    	url = String.format( url+"&start=%d", query.start );    	
-        if( query.end > 0 ) url = String.format( url+"&end=%d", query.end );        	
-   	return url;
+
+    private static String formatURL(String base, String accession, Query query, Format format) {
+        String url = String.format("%s%s?format=%s&referenceName=%s", base, accession, format, query.sequence);
+        if (query.start <= 0) query.start = 1;
+        url = String.format(url + "&start=%d", query.start);
+        if (query.end > 0) url = String.format(url + "&end=%d", query.end);
+//        System.out.println(url);
+        return url;
     }
-   	
-    private static Report testTicketForQuery(TicketResponse r, Query query) throws IOException, URISyntaxException, ParseException {
+
+    private static Report testTicketForQuery(TicketResponse r, Query query, final int bufferSize, CRAMReferenceSource referenceSource) throws IOException, URISyntaxException, ParseException {
         long millisStart = System.currentTimeMillis();
-        InputStream inputStream = join(r);
+        InputStream inputStream = join(r, bufferSize);
 
         CountingInputStream cis = new CountingInputStream(inputStream);
-        SamReader reader = SamReaderFactory.make().open(SamInputResource.of(cis));
+        SamReader reader = SamReaderFactory.make().referenceSource(referenceSource)
+                .open(SamInputResource.of(cis));
         final SAMRecordIterator iterator = reader.iterator();
 
         Report report = new Report();
@@ -174,7 +193,7 @@ public class TicketClient {
     }
 
     private static TicketResponse getTicket(URL url, boolean printTicket) throws IOException, EndpointException {
-	    
+
         HttpURLConnection connection = (HttpURLConnection) url.openConnection();
         connection.setRequestMethod("GET");
         connection.connect();
@@ -198,7 +217,7 @@ public class TicketClient {
         }
     }
 
-    private static InputStream join(TicketResponse response) throws IOException, URISyntaxException, ParseException {
+    private static InputStream join(TicketResponse response, final int bufSize) throws IOException, URISyntaxException, ParseException {
         LinkedList<InputStream> inputStreamList = new LinkedList<>();
         for (TicketResponse.URL_OBJECT uo : response.urls) {
             if (uo.url.startsWith("data")) {
@@ -210,14 +229,20 @@ public class TicketClient {
                     SeekableHTTPStream stream = new SeekableHTTPStream(new URL(uo.url));
                     stream.seek(range.a);
                     long size = range.b - range.a + 1;
-                    inputStreamList.add(new LimitedInputStream(new BufferedInputStream(stream), size));
+
+                    InputStream is = new LimitedInputStream(new BufferedInputStream(stream, bufSize), size);
+                    inputStreamList.add(is);
 
                 } else {
                     long size = getContentLength(new URL(uo.url));
+                    InputStream is = null;
                     if (size > -1L)
-                        inputStreamList.add(new LimitedInputStream(new BufferedInputStream(new URL(uo.url).openStream()), size));
+                        is = new LimitedInputStream(new BufferedInputStream(new URL(uo.url).openStream(), bufSize), size);
                     else
-                        inputStreamList.add(new BufferedInputStream(new URL(uo.url).openStream()));
+                        is = new BufferedInputStream(new URL(uo.url).openStream(), bufSize);
+
+                    inputStreamList.add(is);
+
                 }
             }
         }
@@ -272,7 +297,17 @@ public class TicketClient {
         @Parameter(names = {"--output-file"}, description = "Output file to write received data, omit for STDOUT")
         File outputFile;
 
+
         @Parameter(names = {"--print-ticket"}, description = "Print json ticket before receiving data")
         boolean printTicket = false;
+
+        @Parameter(names = {"--buffer-size"}, description = "The buffer size to be used for downloaded data")
+        int bufferSize=1024*1024;
+
+        @Parameter(names = {"--retries"}, description = "The number of tries before declaring failure")
+        int retries=3;
+
+        @Parameter(names = {"--reference-fasta-file"}, description = "Reference fasta file to be used when reading CRAM stream")
+        File refFile;
     }
 }
